@@ -13,8 +13,35 @@
 
 $ErrorActionPreference = 'Stop'
 
-$javaHome = 'C:\Program Files\Microsoft\jdk-21.0.12.101-hotspot'
-$classpath = (Get-Content "$PSScriptRoot\cp.txt" -Raw).Trim()
+# JAVA_HOME if set, otherwise whatever java is on PATH.
+if ($env:JAVA_HOME -and (Test-Path (Join-Path $env:JAVA_HOME 'bin\java.exe'))) {
+    $javaExe = Join-Path $env:JAVA_HOME 'bin\java.exe'
+}
+else {
+    $onPath = Get-Command java -ErrorAction SilentlyContinue
+    if (-not $onPath) {
+        throw 'No java found. Set JAVA_HOME to a JDK 21 installation or put java on PATH.'
+    }
+    $javaExe = $onPath.Source
+}
+
+# H2 is a test-scoped dependency, so this runs against the test classpath rather than the
+# packaged jar. cp.txt is generated on first run and gitignored thereafter.
+$classpathFile = Join-Path $PSScriptRoot 'cp.txt'
+if (-not (Test-Path $classpathFile)) {
+    Write-Host 'Generating the test classpath (first run only)...' -ForegroundColor DarkGray
+    & (Join-Path $PSScriptRoot 'mvnw.cmd') -B -q dependency:build-classpath `
+        '-Dmdep.outputFile=cp.txt' '-Dmdep.includeScope=test'
+    if (-not (Test-Path $classpathFile)) {
+        throw 'Could not generate cp.txt. Run: .\mvnw.cmd -DskipTests package'
+    }
+}
+
+if (-not (Test-Path (Join-Path $PSScriptRoot 'target\test-classes'))) {
+    throw 'target\test-classes is missing. Run: .\mvnw.cmd test-compile'
+}
+
+$classpath = (Get-Content $classpathFile -Raw).Trim()
 $fullClasspath = "$PSScriptRoot\target\classes;$PSScriptRoot\target\test-classes;$classpath"
 $logFile = Join-Path $env:TEMP 'sqlguard-smoke.log'
 
@@ -49,7 +76,7 @@ function Quote-Arg([string] $value) {
 }
 
 $startInfo = New-Object System.Diagnostics.ProcessStartInfo
-$startInfo.FileName = Join-Path $javaHome 'bin\java.exe'
+$startInfo.FileName = $javaExe
 $startInfo.Arguments = (($javaArgs | ForEach-Object { Quote-Arg $_ }) -join ' ')
 $startInfo.RedirectStandardInput = $true
 $startInfo.RedirectStandardOutput = $true
