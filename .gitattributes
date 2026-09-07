@@ -1,0 +1,14 @@
+# Normalise line endings so a Windows checkout does not break the wrapper or CI.
+* text=auto eol=lf
+
+*.cmd text eol=crlf
+*.bat text eol=crlf
+*.ps1 text eol=crlf
+
+mvnw text eol=lf
+*.sh text eol=lf
+
+*.jar binary
+*.png binary
+*.jpg binary
+*.gz binary

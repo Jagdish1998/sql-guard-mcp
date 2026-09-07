@@ -1,0 +1,38 @@
+# H2 in PostgreSQL compatibility mode. Not a substitute for testing against PostgreSQL,
+# which CI does with a real server, but enough to exercise everything above the dialect
+# boundary with no Docker daemon on the machine.
+spring:
+  main:
+    web-application-type: none
+  ai:
+    mcp:
+      server:
+        stdio: false
+  datasource:
+    url: jdbc:h2:mem:sqlguard;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1
+    username: sa
+    password:
+    driver-class-name: org.h2.Driver
+    hikari:
+      maximum-pool-size: 2
+      read-only: false
+  sql:
+    init:
+      mode: always
+      schema-locations: classpath:schema.sql
+      data-locations: classpath:data.sql
+
+logging:
+  level:
+    root: WARN
+    io.github.jagdish1998.sqlguard: DEBUG
+
+sqlguard:
+  max-rows: 5
+  query-timeout: 10s
+  allowed-schemas:
+    - public
+  blocked-tables:
+    - customers_private
+  redaction:
+    enabled: true

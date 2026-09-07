@@ -1,0 +1,32 @@
+target/
+!.mvn/wrapper/maven-wrapper.jar
+!.mvn/wrapper/maven-wrapper.properties
+
+# Build logs written by the local build helpers
+*.log
+cp.txt
+smoke*.txt
+package-exit.txt
+
+.idea/
+*.iml
+*.ipr
+*.iws
+.vscode/
+.settings/
+.classpath
+.project
+nbproject/
+build/
+!**/src/main/**/build/
+!**/src/test/**/build/
+
+.DS_Store
+Thumbs.db
+
+# Never commit a token or a connection string
+.env
+.env.*
+!.env.example
+*.pem
+*.key

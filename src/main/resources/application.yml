@@ -1,0 +1,93 @@
+spring:
+  application:
+    name: sql-guard-mcp
+
+  # STDIO is the default transport: the MCP client starts this process and talks to it over
+  # pipes, so there is no port and nothing to secure at the network layer.
+  main:
+    web-application-type: none
+    banner-mode: off
+
+  ai:
+    mcp:
+      server:
+        stdio: true
+        type: SYNC
+        name: sql-guard
+        version: 0.1.0
+        instructions: >
+          Read-only SQL access to a relational database. Call list_tables first to discover what
+          exists, describe_table to see columns and which of them arrive masked, then run_query
+          with a single SELECT. Writes, multiple statements, row locking and system catalog reads
+          are refused by the server, not merely discouraged. Use explain_query when a query might
+          be expensive.
+
+  datasource:
+    url: ${SQLGUARD_DB_URL:jdbc:postgresql://localhost:5432/postgres}
+    username: ${SQLGUARD_DB_USER:sqlguard_readonly}
+    password: ${SQLGUARD_DB_PASSWORD:}
+    hikari:
+      # Small pool: one MCP client issuing sequential tool calls does not need more, and a
+      # tight pool bounds the damage an expensive query can do to the database.
+      maximum-pool-size: ${SQLGUARD_DB_POOL_SIZE:4}
+      minimum-idle: 1
+      read-only: true
+      pool-name: sqlguard-pool
+      connection-timeout: 10000
+
+  sql:
+    init:
+      # This server never creates schema. It reads what is already there.
+      mode: never
+
+# Appenders are configured in logback-spring.xml, because where logs go depends on the
+# transport: STDIO needs stdout left clean for JSON-RPC, HTTP wants stdout for the platform
+# to collect.
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      probes:
+        enabled: true
+
+sqlguard:
+  max-rows: 200
+  query-timeout: 5s
+  max-estimated-rows: 5000000
+  max-estimated-cost: 5000000
+  allowed-schemas:
+    - public
+  blocked-tables: []
+  redaction:
+    enabled: true
+
+---
+# Hosted deployment: Streamable HTTP instead of STDIO.
+#   SPRING_PROFILES_ACTIVE=http SQLGUARD_HTTP_AUTH_TOKEN=<long random value>
+# The server will not start in this profile without a token unless
+# sqlguard.http.allow-unauthenticated is explicitly set.
+spring:
+  config:
+    activate:
+      on-profile: http
+  main:
+    web-application-type: servlet
+  ai:
+    mcp:
+      server:
+        stdio: false
+        # SSE is deprecated from Spring AI 2.0 onward; STREAMABLE replaces it.
+        protocol: STREAMABLE
+
+server:
+  port: ${PORT:8080}
+  shutdown: graceful
+
+sqlguard:
+  http:
+    auth-token: ${SQLGUARD_HTTP_AUTH_TOKEN:}
+    allow-unauthenticated: ${SQLGUARD_ALLOW_UNAUTHENTICATED:false}

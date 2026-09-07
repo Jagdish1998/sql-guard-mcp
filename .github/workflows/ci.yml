@@ -1,0 +1,109 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Everything above the dialect boundary, on H2. Fast, and runs anywhere.
+  test:
+    name: Unit and integration tests (H2)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          cache: maven
+
+      - name: Build and test
+        run: ./mvnw -B verify
+
+      - name: Publish test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: surefire-reports
+          path: target/surefire-reports/
+          retention-days: 7
+
+  # The claims that need a real engine: EXPLAIN cost estimates, and read-only transactions
+  # refusing a write that bypassed the validator entirely. Testcontainers would need a Docker
+  # daemon; a service container is simpler and does the same job here.
+  postgres:
+    name: PostgreSQL integration
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: sqlguard_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          cache: maven
+
+      # PostgresIntegrationTests and PostgresCostLimitTests skip themselves unless this is
+      # set, which is what keeps the suite runnable on a laptop with no database.
+      - name: Run the PostgreSQL-backed tests
+        env:
+          SQLGUARD_TEST_PG_URL: jdbc:postgresql://localhost:5432/sqlguard_test
+          SQLGUARD_TEST_PG_USER: postgres
+          SQLGUARD_TEST_PG_PASSWORD: postgres
+        run: ./mvnw -B test -Dtest='Postgres*Tests' -DfailIfNoSpecifiedTests=false
+
+  # Proves the published image builds and that it refuses to start unauthenticated.
+  docker:
+    name: Container image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build the image
+        run: docker build -t sql-guard-mcp:ci .
+
+      - name: Refuses to start over HTTP without a token
+        run: |
+          set +e
+          output=$(docker run --rm \
+            -e SQLGUARD_DB_URL=jdbc:postgresql://127.0.0.1:5432/nowhere \
+            sql-guard-mcp:ci 2>&1)
+          status=$?
+          set -e
+          echo "$output"
+          if [ $status -eq 0 ]; then
+            echo "::error::The server started over HTTP with no bearer token. It must refuse."
+            exit 1
+          fi
+          if ! echo "$output" | grep -q "Refusing to start"; then
+            echo "::error::Expected the startup refusal message, got a different failure."
+            exit 1
+          fi
+          echo "Correctly refused to start without a token."

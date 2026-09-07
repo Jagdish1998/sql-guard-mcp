@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Logging has to move depending on the transport, which is why this is a real config file
+  and not a couple of properties.
+
+  In STDIO mode, stdout IS the JSON-RPC channel. A single stray log line written there
+  corrupts the stream and the client drops the connection, so console logging must be off
+  rather than merely quiet. Trying to express that as an empty `logging.pattern.console`
+  does not work: Logback rejects an empty pattern and reports an error, on stdout.
+
+  In HTTP mode the opposite is true. Container platforms collect stdout, so logs belong
+  there and a log file inside the container is just wasted disk.
+-->
+<configuration>
+
+    <include resource="org/springframework/boot/logging/logback/defaults.xml"/>
+
+    <!-- STDIO transport: file only, stdout kept clean for JSON-RPC. -->
+    <springProfile name="!http &amp; !test">
+        <property name="LOG_FILE"
+                  value="${SQLGUARD_LOG_FILE:-${java.io.tmpdir:-/tmp}/sql-guard-mcp.log}"/>
+
+        <appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+            <file>${LOG_FILE}</file>
+            <encoder>
+                <pattern>${FILE_LOG_PATTERN}</pattern>
+                <charset>UTF-8</charset>
+            </encoder>
+            <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+                <fileNamePattern>${LOG_FILE}.%d{yyyy-MM-dd}.%i.gz</fileNamePattern>
+                <maxFileSize>10MB</maxFileSize>
+                <maxHistory>7</maxHistory>
+                <totalSizeCap>100MB</totalSizeCap>
+            </rollingPolicy>
+        </appender>
+
+        <root level="WARN">
+            <appender-ref ref="FILE"/>
+        </root>
+        <logger name="io.github.jagdish1998.sqlguard" level="INFO"/>
+    </springProfile>
+
+    <!-- HTTP transport and tests: stdout, where a platform or a developer will see it. -->
+    <springProfile name="http | test">
+        <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+            <encoder>
+                <pattern>${CONSOLE_LOG_PATTERN}</pattern>
+                <charset>UTF-8</charset>
+            </encoder>
+        </appender>
+
+        <root level="WARN">
+            <appender-ref ref="CONSOLE"/>
+        </root>
+        <logger name="io.github.jagdish1998.sqlguard" level="INFO"/>
+    </springProfile>
+
+</configuration>

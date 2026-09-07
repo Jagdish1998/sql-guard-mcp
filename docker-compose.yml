@@ -1,0 +1,34 @@
+# A local PostgreSQL with demo data and, importantly, a genuinely read-only role.
+#
+# The role matters more than the data. Every guardrail in this server is a convenience on top
+# of database permissions: parsing gives the model a useful error, but GRANT is what makes a
+# write impossible. Running against a superuser locally and a restricted role in production
+# means testing a different system than the one shipped.
+#
+#   docker compose up -d
+#   SQLGUARD_DB_URL=jdbc:postgresql://localhost:5432/sqlguard_demo \
+#   SQLGUARD_DB_USER=sqlguard_readonly \
+#   SQLGUARD_DB_PASSWORD=readonly_password \
+#   ./mvnw spring-boot:run
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: sqlguard-postgres
+    environment:
+      POSTGRES_DB: sqlguard_demo
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./docker/initdb:/docker-entrypoint-initdb.d:ro
+      - sqlguard-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d sqlguard_demo"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  sqlguard-pgdata:
